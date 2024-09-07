@@ -1,0 +1,61 @@
+;
+; bq2597x.inf
+;
+
+[Version]
+Signature   = "$WINDOWS NT$"
+Class       = Battery
+ClassGuid   = {72631E54-78A4-11D0-BCF7-00AA00B7B32A}
+Provider    = %ManufacturerName%
+CatalogFile = bq2597x.cat
+DriverVer   = 01/01/2023,1.0.0.1
+PnpLockdown = 1
+
+[DestinationDirs]
+DefaultDestDir = 12
+
+; ================= Class section =====================
+
+[SourceDisksNames]
+1 = %DiskName%,,,""
+
+[SourceDisksFiles]
+bq2597x.sys  = 1,,
+
+;*****************************************
+; bq2597x Install Section
+;*****************************************
+
+[Manufacturer]
+%ManufacturerName%=Standard,NT$ARCH$
+
+; Decorated model section take precedence over undecorated 
+; ones on XP and later.
+[Standard.NT$ARCH$]
+%bq2597x.DeviceDesc%=bq2597x_Device, ACPI\BQ25970
+
+[bq2597x_Device.NT]
+CopyFiles=Drivers_Dir
+
+[Drivers_Dir]
+bq2597x.sys
+
+;-------------- Service installation
+[bq2597x_Device.NT.Services]
+AddService = bq2597x,%SPSVCINST_ASSOCSERVICE%, bq2597x_Service_Inst
+
+; -------------- bq2597x driver install sections
+[bq2597x_Service_Inst]
+DisplayName    = %bq2597x.SVCDESC%
+ServiceType    = 1               ; SERVICE_KERNEL_DRIVER
+StartType      = 3               ; SERVICE_DEMAND_START 
+ErrorControl   = 1               ; SERVICE_ERROR_NORMAL
+ServiceBinary  = %12%\bq2597x.sys
+LoadOrderGroup = Base
+
+[Strings]
+SPSVCINST_ASSOCSERVICE= 0x00000002
+ManufacturerName   = "remtrik"
+DiskName           = "TI BQ25970 Installation Disk"
+bq2597x.DeviceDesc = "Texas Instruments BQ25970 Charger"
+bq2597x.SVCDESC    = "BQ25970 Service"
