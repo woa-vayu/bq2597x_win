@@ -70,7 +70,7 @@ enum {
     BQ25970_MASTER,
 };
 
-static int bq2597x_mode_data[] = {
+NTSTATUS bq2597x_mode_data[] = {
     [BQ25970_STDALONE] = BQ25970_STDALONE,
     [BQ25970_MASTER] = BQ25970_ROLE_MASTER,
     [BQ25970_SLAVE] = BQ25970_ROLE_SLAVE,
@@ -186,6 +186,8 @@ struct bq2597x_cfg {
     int sense_r_mohm;
 };
 
+static int bq_debug_flag;
+
 #define ADC_REG_BASE 0x16
 
 NTSTATUS
@@ -224,57 +226,58 @@ DriverEntry(
     return status;
 }
 
-NTSTATUS bq2597x_write_reg(PBQ2597X_CONTEXT pDevice, unsigned char reg, unsigned char data)
+NTSTATUS bq2597x_write_reg(PBQ2597X_CONTEXT pDevice, int reg, UINT8 data)
 {
-    unsigned char buf[2];
+    INT32 status;
+    UINT8 buf[2];
 
     buf[0] = reg;
     buf[1] = data;
 
-    return SpbWriteDataSynchronously(&pDevice->I2CContext, buf, sizeof(buf));
+    status = SpbWriteDataSynchronously(&pDevice->I2CContext, buf, sizeof(buf));
+
+    return 0;
 }
 
 NTSTATUS bq2597x_read_reg(
     _In_ PBQ2597X_CONTEXT pDevice,
-    unsigned char reg,
-    unsigned char* data
+    UINT8 reg,
+    UINT8* data
 ) {
-    NTSTATUS status;
-    unsigned char buf[1];
+    INT32 status;
+    UINT8 raw_data = 0;
 
-    buf[0] = reg;
+    status = SpbWriteRead(&pDevice->I2CContext, &reg, sizeof(reg), &raw_data, sizeof(raw_data), 0);
+    *data = (UINT8)(raw_data);
 
-    status = SpbWriteRead(&pDevice->I2CContext, &buf, sizeof(unsigned char), data, sizeof(unsigned char), 0);
-
-    return status;
+    return 0;
 }
 
-NTSTATUS bq2597x_bulk_read_reg(
+NTSTATUS bq2597x_read_reg_word(
     _In_ PBQ2597X_CONTEXT pDevice,
-    unsigned char reg,
-    unsigned char* data,
-    unsigned int length
+    UINT8 reg,
+    UINT16* data
 ) {
-    NTSTATUS status = STATUS_IO_DEVICE_ERROR;
-    unsigned char buf[1];
-    unsigned char raw_data;
+    INT32 status;
 
-    for (int i = 0; i < length; i++) {
-        buf[0] = reg;
+    status = SpbWriteRead(&pDevice->I2CContext, &reg, sizeof(reg), data, sizeof(data), 0);
 
-        status = SpbWriteRead(&pDevice->I2CContext, &buf, sizeof(unsigned char), &raw_data, sizeof(unsigned char), 0);
-        data[i] = raw_data;
+    TraceEvents(
+        TRACE_LEVEL_ERROR,
+        TRACE_DEVICE,
+        "reg=%d data=%d", reg, *data);
 
-        reg = reg + 1;
-    }
-
-    return status;
+    return 0;
 }
 
-NTSTATUS bq2597x_update_reg(PBQ2597X_CONTEXT pDevice, unsigned char reg, unsigned char mask, unsigned char val)
+NTSTATUS bq2597x_update_reg(
+    PBQ2597X_CONTEXT pDevice, 
+    UINT8 reg,
+    UINT8 mask, 
+    UINT8 val)
 {
     NTSTATUS status;
-    unsigned char temp_val, data;
+    UINT8 temp_val, data;
 
     status = bq2597x_read_reg(pDevice, reg, &data);
 
@@ -290,6 +293,12 @@ NTSTATUS bq2597x_update_reg(PBQ2597X_CONTEXT pDevice, unsigned char reg, unsigne
         status = STATUS_SUCCESS;
         return status;
     }
+
+    TraceEvents(
+        TRACE_LEVEL_ERROR,
+        TRACE_DEVICE,
+        "data=%d temp_val=%d mask=%d ~mask=%d val=%d", data, temp_val, mask, ~mask, val);
+
     status = bq2597x_write_reg(pDevice, reg, temp_val);
 
     return status;
@@ -308,9 +317,9 @@ void msleep(ULONG msec) {
 /**
  * bq2597x device driver control routines 
  */
-static int bq2597x_enable_charge(PBQ2597X_CONTEXT pDevice, bool enable)
+NTSTATUS bq2597x_enable_charge(PBQ2597X_CONTEXT pDevice, bool enable)
 {
-    unsigned char val;
+    UINT8 val;
     if (enable)
         val = BQ2597X_CHG_ENABLE;
     else val = BQ2597X_CHG_DISABLE;
@@ -319,19 +328,19 @@ static int bq2597x_enable_charge(PBQ2597X_CONTEXT pDevice, bool enable)
     return bq2597x_update_reg(pDevice, BQ2597X_REG_0C, BQ2597X_CHG_EN_MASK, val);
 }
 
-static int bq2597x_check_charge_enabled(PBQ2597X_CONTEXT pDevice, bool* enabled)
+NTSTATUS bq2597x_check_charge_enabled(PBQ2597X_CONTEXT pDevice, bool* enabled)
 {
-    int ret;
-    unsigned char val;
+    NTSTATUS ret;
+    UINT8 val;
     ret = bq2597x_read_reg(pDevice, BQ2597X_REG_0C, &val);
     if (!ret)
         *enabled = !!(val & BQ2597X_CHG_EN_MASK);
     return ret;
 }
 
-static int bq2597x_enable_wdt(PBQ2597X_CONTEXT pDevice, bool enable)
+NTSTATUS bq2597x_enable_wdt(PBQ2597X_CONTEXT pDevice, bool enable)
 {
-    unsigned char val;
+    UINT8 val;
 
     if (enable)
         val = BQ2597X_WATCHDOG_ENABLE;
@@ -343,9 +352,9 @@ static int bq2597x_enable_wdt(PBQ2597X_CONTEXT pDevice, bool enable)
     return bq2597x_update_reg(pDevice, BQ2597X_REG_0B, BQ2597X_WATCHDOG_DIS_MASK, val);
 }
 
-static int bq2597x_set_wdt(PBQ2597X_CONTEXT pDevice, int ms)
+NTSTATUS bq2597x_set_wdt(PBQ2597X_CONTEXT pDevice, int ms)
 {
-    unsigned char val;
+    UINT8 val;
 
     if (ms == 500)
         val = BQ2597X_WATCHDOG_0P5S;
@@ -363,9 +372,9 @@ static int bq2597x_set_wdt(PBQ2597X_CONTEXT pDevice, int ms)
     return bq2597x_update_reg(pDevice, BQ2597X_REG_0B, BQ2597X_WATCHDOG_MASK, val);
 }
 
-static int bq2597x_enable_batovp(PBQ2597X_CONTEXT pDevice, bool enable)
+NTSTATUS bq2597x_enable_batovp(PBQ2597X_CONTEXT pDevice, bool enable)
 {
-    unsigned char val;
+    UINT8 val;
 
     if (enable)
         val = BQ2597X_BAT_OVP_ENABLE;
@@ -377,9 +386,9 @@ static int bq2597x_enable_batovp(PBQ2597X_CONTEXT pDevice, bool enable)
     return bq2597x_update_reg(pDevice, BQ2597X_REG_00, BQ2597X_BAT_OVP_DIS_MASK, val);
 }
 
-static int bq2597x_set_batovp_th(PBQ2597X_CONTEXT pDevice, int threshold)
+NTSTATUS bq2597x_set_batovp_th(PBQ2597X_CONTEXT pDevice, UINT8 threshold)
 {
-    unsigned char val;
+    UINT8 val;
 
     if (threshold < BQ2597X_BAT_OVP_BASE)
         threshold = BQ2597X_BAT_OVP_BASE;
@@ -391,9 +400,9 @@ static int bq2597x_set_batovp_th(PBQ2597X_CONTEXT pDevice, int threshold)
     return bq2597x_update_reg(pDevice, BQ2597X_REG_00, BQ2597X_BAT_OVP_MASK, val);
 }
 
-static int bq2597x_enable_batovp_alarm(PBQ2597X_CONTEXT pDevice, bool enable)
+NTSTATUS bq2597x_enable_batovp_alarm(PBQ2597X_CONTEXT pDevice, bool enable)
 {
-    unsigned char val;
+    UINT8 val;
 
     if (enable)
         val = BQ2597X_BAT_OVP_ALM_ENABLE;
@@ -405,9 +414,9 @@ static int bq2597x_enable_batovp_alarm(PBQ2597X_CONTEXT pDevice, bool enable)
     return bq2597x_update_reg(pDevice, BQ2597X_REG_01, BQ2597X_BAT_OVP_ALM_DIS_MASK, val);
 }
 
-static int bq2597x_set_batovp_alarm_th(PBQ2597X_CONTEXT pDevice, int threshold)
+NTSTATUS bq2597x_set_batovp_alarm_th(PBQ2597X_CONTEXT pDevice, UINT8 threshold)
 {
-    unsigned char val;
+    UINT8 val;
 
     if (threshold < BQ2597X_BAT_OVP_ALM_BASE)
         threshold = BQ2597X_BAT_OVP_ALM_BASE;
@@ -419,9 +428,9 @@ static int bq2597x_set_batovp_alarm_th(PBQ2597X_CONTEXT pDevice, int threshold)
     return bq2597x_update_reg(pDevice, BQ2597X_REG_01, BQ2597X_BAT_OVP_ALM_MASK, val);
 }
 
-static int bq2597x_enable_batocp(PBQ2597X_CONTEXT pDevice, bool enable)
+NTSTATUS bq2597x_enable_batocp(PBQ2597X_CONTEXT pDevice, bool enable)
 {
-    unsigned char val;
+    UINT8 val;
 
     if (enable)
         val = BQ2597X_BAT_OCP_ENABLE;
@@ -433,9 +442,9 @@ static int bq2597x_enable_batocp(PBQ2597X_CONTEXT pDevice, bool enable)
     return bq2597x_update_reg(pDevice, BQ2597X_REG_02, BQ2597X_BAT_OCP_DIS_MASK, val);
 }
 
-static int bq2597x_set_batocp_th(PBQ2597X_CONTEXT pDevice, int threshold)
+NTSTATUS bq2597x_set_batocp_th(PBQ2597X_CONTEXT pDevice, UINT8 threshold)
 {
-    unsigned char val;
+    UINT8 val;
 
     if (threshold < BQ2597X_BAT_OCP_BASE)
         threshold = BQ2597X_BAT_OCP_BASE;
@@ -447,9 +456,9 @@ static int bq2597x_set_batocp_th(PBQ2597X_CONTEXT pDevice, int threshold)
     return bq2597x_update_reg(pDevice, BQ2597X_REG_02, BQ2597X_BAT_OCP_MASK, val);
 }
 
-static int bq2597x_enable_batocp_alarm(PBQ2597X_CONTEXT pDevice, bool enable)
+NTSTATUS bq2597x_enable_batocp_alarm(PBQ2597X_CONTEXT pDevice, bool enable)
 {
-    unsigned char val;
+    UINT8 val;
 
     if (enable)
         val = BQ2597X_BAT_OCP_ALM_ENABLE;
@@ -461,9 +470,9 @@ static int bq2597x_enable_batocp_alarm(PBQ2597X_CONTEXT pDevice, bool enable)
     return bq2597x_update_reg(pDevice, BQ2597X_REG_03, BQ2597X_BAT_OCP_ALM_DIS_MASK, val);
 }
 
-static int bq2597x_set_batocp_alarm_th(PBQ2597X_CONTEXT pDevice, int threshold)
+NTSTATUS bq2597x_set_batocp_alarm_th(PBQ2597X_CONTEXT pDevice, int threshold)
 {
-    unsigned char val;
+    UINT8 val;
 
     if (threshold < BQ2597X_BAT_OCP_ALM_BASE)
         threshold = BQ2597X_BAT_OCP_ALM_BASE;
@@ -475,9 +484,9 @@ static int bq2597x_set_batocp_alarm_th(PBQ2597X_CONTEXT pDevice, int threshold)
     return bq2597x_update_reg(pDevice, BQ2597X_REG_03, BQ2597X_BAT_OCP_ALM_MASK, val);
 }
 
-static int bq2597x_set_busovp_th(PBQ2597X_CONTEXT pDevice, int threshold)
+NTSTATUS bq2597x_set_busovp_th(PBQ2597X_CONTEXT pDevice, int threshold)
 {
-    unsigned char val;
+    UINT8 val;
 
     if (threshold < BQ2597X_BUS_OVP_BASE)
         threshold = BQ2597X_BUS_OVP_BASE;
@@ -489,9 +498,9 @@ static int bq2597x_set_busovp_th(PBQ2597X_CONTEXT pDevice, int threshold)
     return bq2597x_update_reg(pDevice, BQ2597X_REG_06, BQ2597X_BUS_OVP_MASK, val);
 }
 
-static int bq2597x_enable_busovp_alarm(PBQ2597X_CONTEXT pDevice, bool enable)
+NTSTATUS bq2597x_enable_busovp_alarm(PBQ2597X_CONTEXT pDevice, bool enable)
 {
-    unsigned char val;
+    UINT8 val;
 
     if (enable)
         val = BQ2597X_BUS_OVP_ALM_ENABLE;
@@ -503,9 +512,9 @@ static int bq2597x_enable_busovp_alarm(PBQ2597X_CONTEXT pDevice, bool enable)
     return bq2597x_update_reg(pDevice, BQ2597X_REG_07, BQ2597X_BUS_OVP_ALM_DIS_MASK, val);
 }
 
-static int bq2597x_set_busovp_alarm_th(PBQ2597X_CONTEXT pDevice, int threshold)
+NTSTATUS bq2597x_set_busovp_alarm_th(PBQ2597X_CONTEXT pDevice, int threshold)
 {
-    unsigned char val;
+    UINT8 val;
 
     if (threshold < BQ2597X_BUS_OVP_ALM_BASE)
         threshold = BQ2597X_BUS_OVP_ALM_BASE;
@@ -517,9 +526,9 @@ static int bq2597x_set_busovp_alarm_th(PBQ2597X_CONTEXT pDevice, int threshold)
     return bq2597x_update_reg(pDevice, BQ2597X_REG_07, BQ2597X_BUS_OVP_ALM_MASK, val);
 }
 
-static int bq2597x_enable_busocp(PBQ2597X_CONTEXT pDevice, bool enable)
+NTSTATUS bq2597x_enable_busocp(PBQ2597X_CONTEXT pDevice, bool enable)
 {
-    unsigned char val;
+    UINT8 val;
 
     if (enable)
         val = BQ2597X_BUS_OCP_ENABLE;
@@ -531,9 +540,9 @@ static int bq2597x_enable_busocp(PBQ2597X_CONTEXT pDevice, bool enable)
     return bq2597x_update_reg(pDevice, BQ2597X_REG_08, BQ2597X_BUS_OCP_DIS_MASK, val);
 }
 
-static int bq2597x_set_busocp_th(PBQ2597X_CONTEXT pDevice, int threshold)
+NTSTATUS bq2597x_set_busocp_th(PBQ2597X_CONTEXT pDevice, int threshold)
 {
-    unsigned char val;
+    UINT8 val;
 
     if (threshold < BQ2597X_BUS_OCP_BASE)
         threshold = BQ2597X_BUS_OCP_BASE;
@@ -545,9 +554,9 @@ static int bq2597x_set_busocp_th(PBQ2597X_CONTEXT pDevice, int threshold)
     return bq2597x_update_reg(pDevice, BQ2597X_REG_08, BQ2597X_BUS_OCP_MASK, val);
 }
 
-static int bq2597x_enable_busocp_alarm(PBQ2597X_CONTEXT pDevice, bool enable)
+NTSTATUS bq2597x_enable_busocp_alarm(PBQ2597X_CONTEXT pDevice, bool enable)
 {
-    unsigned char val;
+    UINT8 val;
 
     if (enable)
         val = BQ2597X_BUS_OCP_ALM_ENABLE;
@@ -559,9 +568,9 @@ static int bq2597x_enable_busocp_alarm(PBQ2597X_CONTEXT pDevice, bool enable)
     return bq2597x_update_reg(pDevice, BQ2597X_REG_09, BQ2597X_BUS_OCP_ALM_DIS_MASK, val);
 }
 
-static int bq2597x_set_busocp_alarm_th(PBQ2597X_CONTEXT pDevice, int threshold)
+NTSTATUS bq2597x_set_busocp_alarm_th(PBQ2597X_CONTEXT pDevice, int threshold)
 {
-    unsigned char val;
+    UINT8 val;
 
     if (threshold < BQ2597X_BUS_OCP_ALM_BASE)
         threshold = BQ2597X_BUS_OCP_ALM_BASE;
@@ -573,9 +582,9 @@ static int bq2597x_set_busocp_alarm_th(PBQ2597X_CONTEXT pDevice, int threshold)
     return bq2597x_update_reg(pDevice, BQ2597X_REG_09, BQ2597X_BUS_OCP_ALM_MASK, val);
 }
 
-static int bq2597x_enable_batucp_alarm(PBQ2597X_CONTEXT pDevice, bool enable)
+NTSTATUS bq2597x_enable_batucp_alarm(PBQ2597X_CONTEXT pDevice, bool enable)
 {
-    unsigned char val;
+    UINT8 val;
 
     if (enable)
         val = BQ2597X_BAT_UCP_ALM_ENABLE;
@@ -587,9 +596,9 @@ static int bq2597x_enable_batucp_alarm(PBQ2597X_CONTEXT pDevice, bool enable)
     return bq2597x_update_reg(pDevice, BQ2597X_REG_04, BQ2597X_BAT_UCP_ALM_DIS_MASK, val);
 }
 
-static int bq2597x_set_batucp_alarm_th(PBQ2597X_CONTEXT pDevice, int threshold)
+NTSTATUS bq2597x_set_batucp_alarm_th(PBQ2597X_CONTEXT pDevice, int threshold)
 {
-    unsigned char val;
+    UINT8 val;
 
     if (threshold < BQ2597X_BAT_UCP_ALM_BASE)
         threshold = BQ2597X_BAT_UCP_ALM_BASE;
@@ -601,9 +610,9 @@ static int bq2597x_set_batucp_alarm_th(PBQ2597X_CONTEXT pDevice, int threshold)
     return bq2597x_update_reg(pDevice, BQ2597X_REG_04, BQ2597X_BAT_UCP_ALM_MASK, val);
 }
 
-static int bq2597x_set_acovp_th(PBQ2597X_CONTEXT pDevice, int threshold)
+NTSTATUS bq2597x_set_acovp_th(PBQ2597X_CONTEXT pDevice, int threshold)
 {
-    unsigned char val;
+    UINT8 val;
 
     if (threshold < BQ2597X_AC_OVP_BASE)
         threshold = BQ2597X_AC_OVP_BASE;
@@ -618,9 +627,9 @@ static int bq2597x_set_acovp_th(PBQ2597X_CONTEXT pDevice, int threshold)
     return bq2597x_update_reg(pDevice, BQ2597X_REG_05, BQ2597X_AC_OVP_MASK, val);
 }
 
-static int bq2597x_set_vdrop_th(PBQ2597X_CONTEXT pDevice, int threshold)
+NTSTATUS bq2597x_set_vdrop_th(PBQ2597X_CONTEXT pDevice, int threshold)
 {
-    unsigned char val;
+    UINT8 val;
 
     if (threshold == 300)
         val = BQ2597X_VDROP_THRESHOLD_300MV;
@@ -632,9 +641,9 @@ static int bq2597x_set_vdrop_th(PBQ2597X_CONTEXT pDevice, int threshold)
     return bq2597x_update_reg(pDevice, BQ2597X_REG_05, BQ2597X_VDROP_THRESHOLD_SET_MASK, val);
 }
 
-static int bq2597x_set_vdrop_deglitch(PBQ2597X_CONTEXT pDevice, int us)
+NTSTATUS bq2597x_set_vdrop_deglitch(PBQ2597X_CONTEXT pDevice, int us)
 {
-    unsigned char val;
+    UINT8 val;
 
     if (us == 8)
         val = BQ2597X_VDROP_DEGLITCH_8US;
@@ -646,9 +655,9 @@ static int bq2597x_set_vdrop_deglitch(PBQ2597X_CONTEXT pDevice, int us)
     return bq2597x_update_reg(pDevice, BQ2597X_REG_05, BQ2597X_VDROP_DEGLITCH_SET_MASK, val);
 }
 
-static int bq2597x_enable_bat_therm(PBQ2597X_CONTEXT pDevice, bool enable)
+NTSTATUS bq2597x_enable_bat_therm(PBQ2597X_CONTEXT pDevice, bool enable)
 {
-    unsigned char val;
+    UINT8 val;
 
     if (enable)
         val = BQ2597X_TSBAT_ENABLE;
@@ -660,14 +669,14 @@ static int bq2597x_enable_bat_therm(PBQ2597X_CONTEXT pDevice, bool enable)
     return bq2597x_update_reg(pDevice, BQ2597X_REG_0C, BQ2597X_TSBAT_DIS_MASK, val);
 }
 
-static int bq2597x_set_bat_therm_th(PBQ2597X_CONTEXT pDevice, unsigned char threshold)
+NTSTATUS bq2597x_set_bat_therm_th(PBQ2597X_CONTEXT pDevice, UINT8 threshold)
 {
     return bq2597x_write_reg(pDevice, BQ2597X_REG_29, threshold);
 }
 
-static int bq2597x_enable_bus_therm(PBQ2597X_CONTEXT pDevice, bool enable)
+NTSTATUS bq2597x_enable_bus_therm(PBQ2597X_CONTEXT pDevice, bool enable)
 {
-    unsigned char val;
+    UINT8 val;
 
     if (enable)
         val = BQ2597X_TSBUS_ENABLE;
@@ -679,14 +688,14 @@ static int bq2597x_enable_bus_therm(PBQ2597X_CONTEXT pDevice, bool enable)
     return bq2597x_update_reg(pDevice, BQ2597X_REG_0C, BQ2597X_TSBUS_DIS_MASK, val);
 }
 
-static int bq2597x_set_bus_therm_th(PBQ2597X_CONTEXT pDevice, unsigned char threshold)
+NTSTATUS bq2597x_set_bus_therm_th(PBQ2597X_CONTEXT pDevice, UINT8 threshold)
 {
     return bq2597x_write_reg(pDevice, BQ2597X_REG_28, threshold);
 }
 
-static int bq2597x_enable_die_therm(PBQ2597X_CONTEXT pDevice, bool enable)
+NTSTATUS bq2597x_enable_die_therm(PBQ2597X_CONTEXT pDevice, bool enable)
 {
-    unsigned char val;
+    UINT8 val;
 
     if (enable)
         val = BQ2597X_TDIE_ENABLE;
@@ -698,9 +707,9 @@ static int bq2597x_enable_die_therm(PBQ2597X_CONTEXT pDevice, bool enable)
     return bq2597x_update_reg(pDevice, BQ2597X_REG_0C, BQ2597X_TDIE_DIS_MASK, val);
 }
 
-static int bq2597x_set_die_therm_th(PBQ2597X_CONTEXT pDevice, unsigned char threshold)
+NTSTATUS bq2597x_set_die_therm_th(PBQ2597X_CONTEXT pDevice, UINT8 threshold)
 {
-    unsigned char val;
+    UINT8 val;
 
     val = (threshold - BQ2597X_TDIE_ALM_BASE) * BQ2597X_TDIE_ALM_LSB;
     val <<= BQ2597X_TDIE_ALM_SHIFT;
@@ -708,9 +717,9 @@ static int bq2597x_set_die_therm_th(PBQ2597X_CONTEXT pDevice, unsigned char thre
     return bq2597x_update_reg(pDevice, BQ2597X_REG_2A, BQ2597X_TDIE_ALM_MASK, val);
 }
 
-static int bq2597x_enable_adc(PBQ2597X_CONTEXT pDevice, bool enable)
+NTSTATUS bq2597x_enable_adc(PBQ2597X_CONTEXT pDevice, bool enable)
 {
-    unsigned char val;
+    UINT8 val;
 
     if (enable)
         val = BQ2597X_ADC_ENABLE;
@@ -722,9 +731,9 @@ static int bq2597x_enable_adc(PBQ2597X_CONTEXT pDevice, bool enable)
     return bq2597x_update_reg(pDevice, BQ2597X_REG_14, BQ2597X_ADC_EN_MASK, val);
 }
 
-static int bq2597x_set_adc_average(PBQ2597X_CONTEXT pDevice, bool avg)
+NTSTATUS bq2597x_set_adc_average(PBQ2597X_CONTEXT pDevice, bool avg)
 {
-    unsigned char val;
+    UINT8 val;
 
     if (avg)
         val = BQ2597X_ADC_AVG_ENABLE;
@@ -736,9 +745,9 @@ static int bq2597x_set_adc_average(PBQ2597X_CONTEXT pDevice, bool avg)
     return bq2597x_update_reg(pDevice, BQ2597X_REG_14, BQ2597X_ADC_AVG_MASK, val);
 }
 
-static int bq2597x_set_adc_scanrate(PBQ2597X_CONTEXT pDevice, bool oneshot)
+NTSTATUS bq2597x_set_adc_scanrate(PBQ2597X_CONTEXT pDevice, bool oneshot)
 {
-    unsigned char val;
+    UINT8 val;
 
     if (oneshot)
         val = BQ2597X_ADC_RATE_ONESHOT;
@@ -750,9 +759,9 @@ static int bq2597x_set_adc_scanrate(PBQ2597X_CONTEXT pDevice, bool oneshot)
     return bq2597x_update_reg(pDevice, BQ2597X_REG_14, BQ2597X_ADC_EN_MASK, val);
 }
 
-static int bq2597x_set_adc_bits(PBQ2597X_CONTEXT pDevice, int bits)
+NTSTATUS bq2597x_set_adc_bits(PBQ2597X_CONTEXT pDevice, int bits)
 {
-    unsigned char val;
+    UINT8 val;
 
     if (bits > 15)
         bits = 15;
@@ -765,16 +774,16 @@ static int bq2597x_set_adc_bits(PBQ2597X_CONTEXT pDevice, int bits)
     return bq2597x_update_reg(pDevice, BQ2597X_REG_14, BQ2597X_ADC_SAMPLE_MASK, val);
 }
 
-static int bq2597x_get_adc_data(PBQ2597X_CONTEXT pDevice, int channel, int *result)
+NTSTATUS bq2597x_get_adc_data(PBQ2597X_CONTEXT pDevice, int channel, int *result)
 {
-    int ret;
-    unsigned char val;
-    signed char t;
+    NTSTATUS ret;
+    UINT16 val;
+    INT16 t;
 
     if (channel > ADC_MAX_NUM)
         return STATUS_INVALID_PARAMETER;
 
-    ret = bq2597x_read_reg(pDevice, ADC_REG_BASE + (channel << 1), &val);
+    ret = bq2597x_read_reg_word(pDevice, ADC_REG_BASE + (channel << 1), &val);
     if (ret < 0)
         return ret;
     t = val & 0xFF;
@@ -785,13 +794,12 @@ static int bq2597x_get_adc_data(PBQ2597X_CONTEXT pDevice, int channel, int *resu
     return 0;
 }
 
-static int bq2597x_set_adc_scan(PBQ2597X_CONTEXT pDevice, int channel, bool enable)
+NTSTATUS bq2597x_set_adc_scan(PBQ2597X_CONTEXT pDevice, int channel, bool enable)
 {
-    int ret;
-    unsigned char reg;
-    unsigned char mask;
-    unsigned char shift;
-    unsigned char val;
+    UINT8 reg;
+    UINT8 mask;
+    UINT8 shift;
+    UINT8 val;
 
     if (channel > ADC_MAX_NUM)
         return STATUS_INVALID_PARAMETER;
@@ -815,10 +823,10 @@ static int bq2597x_set_adc_scan(PBQ2597X_CONTEXT pDevice, int channel, bool enab
     return bq2597x_update_reg(pDevice, reg, mask, val);
 }
 
-static int bq2597x_set_alarm_int_mask(PBQ2597X_CONTEXT pDevice, unsigned char mask)
+NTSTATUS bq2597x_set_alarm_int_mask(PBQ2597X_CONTEXT pDevice, UINT8 mask)
 {
-    int ret;
-    unsigned char val;
+    NTSTATUS ret;
+    UINT8 val;
 
     ret = bq2597x_read_reg(pDevice, BQ2597X_REG_0F, &val);
     if (ret)
@@ -831,10 +839,10 @@ static int bq2597x_set_alarm_int_mask(PBQ2597X_CONTEXT pDevice, unsigned char ma
     return ret;
 }
 
-static int bq2597x_clear_alarm_int_mask(PBQ2597X_CONTEXT pDevice, unsigned char mask)
+NTSTATUS bq2597x_clear_alarm_int_mask(PBQ2597X_CONTEXT pDevice, UINT8 mask)
 {
-    int ret;
-    unsigned char val;
+    NTSTATUS ret;
+    UINT8 val;
 
     ret = bq2597x_read_reg(pDevice, BQ2597X_REG_0F, &val);
     if (ret)
@@ -847,10 +855,10 @@ static int bq2597x_clear_alarm_int_mask(PBQ2597X_CONTEXT pDevice, unsigned char 
     return ret;
 }
 
-static int bq2597x_set_fault_int_mask(PBQ2597X_CONTEXT pDevice, unsigned char mask)
+NTSTATUS bq2597x_set_fault_int_mask(PBQ2597X_CONTEXT pDevice, UINT8 mask)
 {
-    int ret;
-    unsigned char val;
+    NTSTATUS ret;
+    UINT8 val;
 
     ret = bq2597x_read_reg(pDevice, BQ2597X_REG_12, &val);
     if (ret)
@@ -863,10 +871,10 @@ static int bq2597x_set_fault_int_mask(PBQ2597X_CONTEXT pDevice, unsigned char ma
     return ret;
 }
 
-static int bq2597x_clear_fault_int_mask(PBQ2597X_CONTEXT pDevice, unsigned char mask)
+NTSTATUS bq2597x_clear_fault_int_mask(PBQ2597X_CONTEXT pDevice, UINT8 mask)
 {
-    int ret;
-    unsigned char val;
+    NTSTATUS ret;
+    UINT8 val;
 
     ret = bq2597x_read_reg(pDevice, BQ2597X_REG_12, &val);
     if (ret)
@@ -879,9 +887,9 @@ static int bq2597x_clear_fault_int_mask(PBQ2597X_CONTEXT pDevice, unsigned char 
     return ret;
 }
 
-static int bq2597x_set_sense_resistor(PBQ2597X_CONTEXT pDevice, int r_mohm)
+NTSTATUS bq2597x_set_sense_resistor(PBQ2597X_CONTEXT pDevice, int r_mohm)
 {
-    unsigned char val;
+    UINT8 val;
 
     if (r_mohm == 2)
         val = BQ2597X_SET_IBAT_SNS_RES_2MHM;
@@ -895,9 +903,9 @@ static int bq2597x_set_sense_resistor(PBQ2597X_CONTEXT pDevice, int r_mohm)
     return bq2597x_update_reg(pDevice, BQ2597X_REG_2B, BQ2597X_SET_IBAT_SNS_RES_MASK, val);
 }
 
-static int bq2597x_set_ibus_ucp_thr(PBQ2597X_CONTEXT pDevice, int ibus_ucp_thr)
+NTSTATUS bq2597x_set_ibus_ucp_thr(PBQ2597X_CONTEXT pDevice, int ibus_ucp_thr)
 {
-    unsigned char val;
+    UINT8 val;
 
     if (ibus_ucp_thr == 300)
         val = BQ2597X_IBUS_UCP_RISE_300MA;
@@ -911,9 +919,9 @@ static int bq2597x_set_ibus_ucp_thr(PBQ2597X_CONTEXT pDevice, int ibus_ucp_thr)
     return bq2597x_update_reg(pDevice, BQ2597X_REG_2B, BQ2597X_IBUS_UCP_RISE_TH_MASK, val);
 }
 
-static int bq2597x_enable_regulation(PBQ2597X_CONTEXT pDevice, bool enable)
+NTSTATUS bq2597x_enable_regulation(PBQ2597X_CONTEXT pDevice, bool enable)
 {
-    unsigned char val;
+    UINT8 val;
 
     if (enable)
         val = BQ2597X_EN_REGULATION_ENABLE;
@@ -925,9 +933,9 @@ static int bq2597x_enable_regulation(PBQ2597X_CONTEXT pDevice, bool enable)
     return bq2597x_update_reg(pDevice, BQ2597X_REG_2B, BQ2597X_EN_REGULATION_MASK, val);
 }
 
-static int bq2597x_set_ss_timeout(PBQ2597X_CONTEXT pDevice, int timeout)
+NTSTATUS bq2597x_set_ss_timeout(PBQ2597X_CONTEXT pDevice, int timeout)
 {
-    unsigned char val;
+    UINT8 val;
 
     switch (timeout) {
     case 0:
@@ -964,9 +972,9 @@ static int bq2597x_set_ss_timeout(PBQ2597X_CONTEXT pDevice, int timeout)
     return bq2597x_update_reg(pDevice, BQ2597X_REG_2B, BQ2597X_SS_TIMEOUT_SET_MASK, val);
 }
 
-static int bq2597x_set_ibat_reg_th(PBQ2597X_CONTEXT pDevice, int th_ma)
+NTSTATUS bq2597x_set_ibat_reg_th(PBQ2597X_CONTEXT pDevice, int th_ma)
 {
-    unsigned char val;
+    UINT8 val;
 
     if (th_ma == 200)
         val = BQ2597X_IBAT_REG_200MA;
@@ -984,9 +992,9 @@ static int bq2597x_set_ibat_reg_th(PBQ2597X_CONTEXT pDevice, int th_ma)
     return bq2597x_update_reg(pDevice, BQ2597X_REG_2C, BQ2597X_IBAT_REG_MASK, val);
 }
 
-static int bq2597x_set_vbat_reg_th(PBQ2597X_CONTEXT pDevice, int th_mv)
+NTSTATUS bq2597x_set_vbat_reg_th(PBQ2597X_CONTEXT pDevice, int th_mv)
 {
-    unsigned char val;
+    UINT8 val;
 
     if (th_mv == 50)
         val = BQ2597X_VBAT_REG_50MV;
@@ -1002,10 +1010,10 @@ static int bq2597x_set_vbat_reg_th(PBQ2597X_CONTEXT pDevice, int th_mv)
     return bq2597x_update_reg(pDevice, BQ2597X_REG_2C, BQ2597X_VBAT_REG_MASK, val);
 }
 
-static int bq2597x_check_reg_status(PBQ2597X_CONTEXT pDevice)
+NTSTATUS bq2597x_check_reg_status(PBQ2597X_CONTEXT pDevice)
 {
-    int ret;
-    unsigned char val;
+    NTSTATUS ret;
+    UINT8 val;
 
     ret = bq2597x_read_reg(pDevice, BQ2597X_REG_2C, &val);
     if (!ret) {
@@ -1016,10 +1024,10 @@ static int bq2597x_check_reg_status(PBQ2597X_CONTEXT pDevice)
     return ret;
 }
 
-static int bq2597x_get_work_mode(PBQ2597X_CONTEXT pDevice, int* mode)
+NTSTATUS bq2597x_get_work_mode(PBQ2597X_CONTEXT pDevice, int* mode)
 {
-    int ret;
-    unsigned char val;
+    NTSTATUS ret;
+    UINT8 val;
 
     ret = bq2597x_read_reg(pDevice, BQ2597X_REG_0C, &val);
 
@@ -1042,10 +1050,10 @@ static int bq2597x_get_work_mode(PBQ2597X_CONTEXT pDevice, int* mode)
     return ret;
 }
 
-static int bq2597x_detect_device(PBQ2597X_CONTEXT pDevice)
+NTSTATUS bq2597x_detect_device(PBQ2597X_CONTEXT pDevice)
 {
-    int ret;
-    unsigned char data;
+    NTSTATUS ret;
+    UINT8 data;
 
     ret = bq2597x_read_reg(pDevice, BQ2597X_REG_13, &data);
     if (ret == 0) {
@@ -1068,9 +1076,9 @@ static void bq2597x_dump_reg(PBQ2597X_CONTEXT pDevice);
         msecs_to_jiffies(RUNNING_PERIOD_S));
 }*/ // TODO: FIND OUT HOW TO CONVERT THIS
 
-static int bq2597x_init_protection(PBQ2597X_CONTEXT pDevice)
+NTSTATUS bq2597x_init_protection(PBQ2597X_CONTEXT pDevice)
 {
-    int ret;
+    NTSTATUS ret;
     
     ret = bq2597x_enable_batovp(pDevice, !bat_ovp_disable);
     ret = bq2597x_enable_batocp(pDevice, !bat_ocp_disable);
@@ -1100,7 +1108,7 @@ static int bq2597x_init_protection(PBQ2597X_CONTEXT pDevice)
     return 0;
 }
 
-static int bq2597x_set_bus_protection(PBQ2597X_CONTEXT pDevice, int hvdcp3_type)
+NTSTATUS bq2597x_set_bus_protection(PBQ2597X_CONTEXT pDevice, int hvdcp3_type)
 {
     if (hvdcp3_type == HVDCP3_CLASSA_18W) {
         bq2597x_set_busovp_th(pDevice, BUS_OVP_FOR_QC);
@@ -1123,7 +1131,7 @@ static int bq2597x_set_bus_protection(PBQ2597X_CONTEXT pDevice, int hvdcp3_type)
     return 0;
 }
 
-static int bq2597x_init_adc(PBQ2597X_CONTEXT pDevice)
+NTSTATUS bq2597x_init_adc(PBQ2597X_CONTEXT pDevice)
 {
     bq2597x_set_adc_scanrate(pDevice, false);
     bq2597x_set_adc_bits(pDevice, 13);
@@ -1143,9 +1151,9 @@ static int bq2597x_init_adc(PBQ2597X_CONTEXT pDevice)
     return 0;
 }
 
-static int bq2597x_init_int_src(PBQ2597X_CONTEXT pDevice)
+NTSTATUS bq2597x_init_int_src(PBQ2597X_CONTEXT pDevice)
 {
-    int ret;
+    NTSTATUS ret;
     /*TODO:be careful ts bus and ts bat alarm bit mask is in
      *	fault mask register, so you need call
      *	bq2597x_set_fault_int_mask for tsbus and tsbat alarm
@@ -1174,7 +1182,7 @@ static int bq2597x_init_int_src(PBQ2597X_CONTEXT pDevice)
     return ret;
 }
 
-static int bq2597x_init_regulation(PBQ2597X_CONTEXT pDevice)
+NTSTATUS bq2597x_init_regulation(PBQ2597X_CONTEXT pDevice)
 {
     bq2597x_set_ibat_reg_th(pDevice, 200);
     bq2597x_set_vbat_reg_th(pDevice, 50);
@@ -1187,7 +1195,7 @@ static int bq2597x_init_regulation(PBQ2597X_CONTEXT pDevice)
     return 0;
 }
 
-static int bq2597x_init_device(PBQ2597X_CONTEXT pDevice)
+NTSTATUS bq2597x_init_device(PBQ2597X_CONTEXT pDevice)
 {
     bq2597x_enable_wdt(pDevice, false);
 
@@ -1204,7 +1212,7 @@ static int bq2597x_init_device(PBQ2597X_CONTEXT pDevice)
     return 0;
 }
 
-static int bq2597x_set_present(PBQ2597X_CONTEXT pDevice, bool present)
+NTSTATUS bq2597x_set_present(PBQ2597X_CONTEXT pDevice, bool present)
 {
     (pDevice->usb_present) = present;
 
@@ -1222,7 +1230,7 @@ static int bq2597x_set_present(PBQ2597X_CONTEXT pDevice, bool present)
     u8 tmpbuf[300];
     int len;
     int idx = 0;
-    int ret;
+    NTSTATUS ret;
 
     idx = snprintf(buf, PAGE_SIZE, "%s:\n", "bq25970");
     for (addr = 0x0; addr <= 0x2A; addr++) {
@@ -1242,7 +1250,7 @@ static ssize_t bq2597x_store_register(struct device* dev,
     struct device_attribute* attr, const char* buf, size_t count)
 {
     struct bq2597x* bq = dev_get_drvdata(dev);
-    int ret;
+    NTSTATUS ret;
     unsigned int reg;
     unsigned int val;
 
@@ -1259,13 +1267,13 @@ static DEVICE_ATTR(registers, 0660, bq2597x_show_registers, bq2597x_store_regist
 /* static void bq2597x_check_alarm_status(BQ2597X_CONTEXT pDevice) {}
 static void bq2597x_check_fault_status(BQ2597X_CONTEXT pDevice) {}
 
-static int bq2597x_charger_get_property(struct power_supply* psy,
+NTSTATUS bq2597x_charger_get_property(struct power_supply* psy,
     enum power_supply_property psp,
     union power_supply_propval* val)
 {
     PBQ2597X_CONTEXT pDevice = power_supply_get_drvdata(psy);
     int result;
-    int ret;
+    NTSTATUS ret;
     u8 reg_val;
 
     switch (psp) {
@@ -1396,7 +1404,7 @@ static int bq2597x_charger_get_property(struct power_supply* psy,
     return 0;
 }
 
-static int bq2597x_charger_set_property(struct power_supply* psy,
+NTSTATUS bq2597x_charger_set_property(struct power_supply* psy,
     enum power_supply_property prop,
     const union power_supply_propval* val)
 {
@@ -1422,10 +1430,10 @@ static int bq2597x_charger_set_property(struct power_supply* psy,
     return 0;
 }
 
-static int bq2597x_charger_is_writeable(struct power_supply* psy,
+NTSTATUS bq2597x_charger_is_writeable(struct power_supply* psy,
     enum power_supply_property prop)
 {
-    int ret;
+    NTSTATUS ret;
 
     switch (prop) {
     case POWER_SUPPLY_PROP_CHARGING_ENABLED:
@@ -1441,16 +1449,140 @@ static int bq2597x_charger_is_writeable(struct power_supply* psy,
 
 static void bq2597x_charger_info(PBQ2597X_CONTEXT pDevice)
 {
-    int vbat, vbus, ibus;
+    int vbat = 0, vbus = 0, ibus = 0, vac = 0;
 
     bq2597x_get_adc_data(pDevice, ADC_VBAT, &vbat);
     bq2597x_get_adc_data(pDevice, ADC_VBUS, &vbus);
     bq2597x_get_adc_data(pDevice, ADC_IBUS, &ibus);
+    bq2597x_get_adc_data(pDevice, ADC_VAC, &vac);
     TraceEvents(
         TRACE_LEVEL_ERROR,
         TRACE_DEVICE,
-        "charger info: vbat(%d), vbus(%d), ibus(%d)\n",
-        vbat, vbus, ibus);
+        "charger info: vbat(%d), vbus(%d), ibus(%d), vac(%d)\n",
+        vbat, vbus, ibus, vac);
+}
+
+static void bq2597x_check_alarm_status(PBQ2597X_CONTEXT pDevice)
+{
+    int ret;
+    UINT8 flag = 0;
+    UINT8 stat = 0;
+
+    ret = bq2597x_read_reg(pDevice, BQ2597X_REG_08, &flag);
+    if (!ret && (flag & BQ2597X_IBUS_UCP_FALL_FLAG_MASK))
+        TraceEvents(
+            TRACE_LEVEL_ERROR,
+            TRACE_DEVICE,
+            "UCP_FLAG =0x%02X\n",
+            !!(flag & BQ2597X_IBUS_UCP_FALL_FLAG_MASK));
+
+    ret = bq2597x_read_reg(pDevice, BQ2597X_REG_2D, &flag);
+    if (!ret && (flag & BQ2597X_VDROP_OVP_FLAG_MASK))
+        TraceEvents(
+            TRACE_LEVEL_ERROR,
+            TRACE_DEVICE,
+            "VDROP_OVP_FLAG =0x%02X\n",
+            !!(flag & BQ2597X_VDROP_OVP_FLAG_MASK));
+
+    /*read to clear alarm flag*/
+    ret = bq2597x_read_reg(pDevice, BQ2597X_REG_0E, &flag);
+    if (!ret && flag)
+        TraceEvents(
+            TRACE_LEVEL_ERROR,
+            TRACE_DEVICE,
+            "INT_FLAG =0x%02X\n", flag);
+
+    ret = bq2597x_read_reg(pDevice, BQ2597X_REG_0D, &stat);
+    if (!ret && stat != pDevice->prev_alarm) {
+        TraceEvents(
+            TRACE_LEVEL_ERROR,
+            TRACE_DEVICE,
+            "INT_STAT = 0X%02x\n", stat);
+        pDevice->prev_alarm = stat;
+        pDevice->bat_ovp_alarm = !!(stat & BAT_OVP_ALARM);
+        pDevice->bat_ocp_alarm = !!(stat & BAT_OCP_ALARM);
+        pDevice->bus_ovp_alarm = !!(stat & BUS_OVP_ALARM);
+        pDevice->bus_ocp_alarm = !!(stat & BUS_OCP_ALARM);
+        pDevice->batt_present = !!(stat & VBAT_INSERT);
+        pDevice->vbus_present = !!(stat & VBUS_INSERT);
+        pDevice->bat_ucp_alarm = !!(stat & BAT_UCP_ALARM);
+    }
+
+
+    ret = bq2597x_read_reg(pDevice, BQ2597X_REG_08, &stat);
+    if (!ret && (stat & 0x50))
+        TraceEvents(
+            TRACE_LEVEL_ERROR,
+            TRACE_DEVICE,
+            "Reg[08]BUS_UCPOVP = 0x%02X\n", stat);
+
+    ret = bq2597x_read_reg(pDevice, BQ2597X_REG_0A, &stat);
+    if (!ret && (stat & 0x02))
+        TraceEvents(
+            TRACE_LEVEL_ERROR,
+            TRACE_DEVICE,
+            "Reg[0A]CONV_OCP = 0x%02X\n", stat);
+
+}
+
+static void bq2597x_check_fault_status(PBQ2597X_CONTEXT pDevice)
+{
+    int ret;
+    UINT8 flag = 0;
+    UINT8 stat = 0;
+    bool changed = false;
+
+    ret = bq2597x_read_reg(pDevice, BQ2597X_REG_10, &stat);
+    if (!ret && stat)
+        TraceEvents(
+            TRACE_LEVEL_ERROR,
+            TRACE_DEVICE,
+            "FAULT_STAT = 0x%02X\n", stat);
+
+    ret = bq2597x_read_reg(pDevice, BQ2597X_REG_11, &flag);
+    if (!ret && flag)
+        TraceEvents(
+            TRACE_LEVEL_ERROR,
+            TRACE_DEVICE,
+            "FAULT_FLAG = 0x%02X\n", flag);
+
+    if (!ret && flag != pDevice->prev_fault) {
+        changed = true;
+        pDevice->prev_fault = flag;
+        pDevice->bat_ovp_fault = !!(flag & BAT_OVP_FAULT);
+        pDevice->bat_ocp_fault = !!(flag & BAT_OCP_FAULT);
+        pDevice->bus_ovp_fault = !!(flag & BUS_OVP_FAULT);
+        pDevice->bus_ocp_fault = !!(flag & BUS_OCP_FAULT);
+        pDevice->bat_therm_fault = !!(flag & TS_BAT_FAULT);
+        pDevice->bus_therm_fault = !!(flag & TS_BUS_FAULT);
+
+        pDevice->bat_therm_alarm = !!(flag & TBUS_TBAT_ALARM);
+        pDevice->bus_therm_alarm = !!(flag & TBUS_TBAT_ALARM);
+    }
+
+}
+
+static void bq2597x_dump_reg(PBQ2597X_CONTEXT pDevice)
+{
+
+    int ret;
+    UINT8 val;
+    UINT8 addr;
+    if (bq_debug_flag) {
+        for (addr = 0x00; addr <= 0x2B; addr++) {
+            ret = bq2597x_read_reg(pDevice, addr, &val);
+            if (!ret)
+                TraceEvents(
+                    TRACE_LEVEL_ERROR,
+                    TRACE_DEVICE,
+                    "Reg[%02X] = 0x%02X\n", addr, val);
+        }
+    }
+}
+
+static void bq2597x_charger_shutdown(PBQ2597X_CONTEXT pDevice)
+{
+    bq2597x_enable_adc(pDevice, false);
 }
 
 BOOLEAN
@@ -1469,15 +1601,23 @@ OnInterruptIsr(
     TraceEvents(
         TRACE_LEVEL_ERROR,
         TRACE_DEVICE,
-        "OnInterruptIsr - Entry\n");
+        "Entering %!FUNC!");
 
     ret = false;
     pDevice = GetDeviceContext(WdfInterruptGetDevice(Interrupt));
 
+    bq2597x_check_alarm_status(pDevice);
+    bq2597x_check_fault_status(pDevice);
+
     bq2597x_charger_info(pDevice);
+    bq2597x_dump_reg(pDevice);
 
     ret = true;
-
+    TraceEvents(
+        TRACE_LEVEL_ERROR,
+        TRACE_DEVICE,
+        "Exiting %!FUNC! - %!STATUS!",
+        ret);
     return ret;
 }
 
@@ -1512,6 +1652,11 @@ Status
     NTSTATUS status = STATUS_INSUFFICIENT_RESOURCES;
 
     UNREFERENCED_PARAMETER(FxResourcesRaw);
+
+    TraceEvents(
+        TRACE_LEVEL_ERROR,
+        TRACE_DEVICE,
+        "Entering %!FUNC!");
 
     //
     // Parse the peripheral's resources.
@@ -1570,20 +1715,10 @@ Status
 
     status = SpbTargetInitialize(FxDevice, &pDevice->I2CContext);
 
-    if (!NT_SUCCESS(status))
-    {
-        TraceEvents(
-            TRACE_LEVEL_ERROR,
-            TRACE_DEVICE,
-            "Exiting OnPrepareHardware - %!STATUS!",
-                status);
-        return status;
-    }
-
     TraceEvents(
         TRACE_LEVEL_ERROR,
         TRACE_DEVICE,
-        "Exiting OnPrepareHardware - %!STATUS!",
+        "Exiting %!FUNC! - %!STATUS!",
         status);
     return status;
 }
@@ -1614,8 +1749,20 @@ Status
 
     UNREFERENCED_PARAMETER(FxResourcesTranslated);
 
+    TraceEvents(
+        TRACE_LEVEL_ERROR,
+        TRACE_DEVICE,
+        "Entering %!FUNC!");
+
+    bq2597x_enable_adc(pDevice, false);
+
     SpbTargetDeinitialize(FxDevice, &pDevice->I2CContext);
 
+    TraceEvents(
+        TRACE_LEVEL_ERROR,
+        TRACE_DEVICE,
+        "Exiting %!FUNC! - %!STATUS!",
+        status);
     return status;
 }
 
@@ -1649,22 +1796,32 @@ Status
 {
     UNREFERENCED_PARAMETER(FxPreviousState);
 
+    TraceEvents(
+        TRACE_LEVEL_ERROR,
+        TRACE_DEVICE,
+        "Entering %!FUNC!");
+
     PBQ2597X_CONTEXT pDevice = GetDeviceContext(FxDevice);
     NTSTATUS status = STATUS_SUCCESS;
-
-    unsigned char deviceId;
 
     //start charger
     status = bq2597x_detect_device(pDevice);
     if (status) {
         TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE,
-            "Failed to detect bq25970\n");
+            "Failed to detect bq25970");
         return STATUS_IO_DEVICE_ERROR;
     }
-    TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE,
-        "Device id=0x%x\n", status);
+    else {
+        TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE,
+            "Device id=0x%x", status);
+    }
 
-    bq2597x_init_device(pDevice);
+    status = bq2597x_init_device(pDevice);
+    if (status) {
+        TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE,
+            "Failed to init device");
+        return STATUS_IO_DEVICE_ERROR;
+    }
 
     status = WdfWaitLockCreate(
 		WDF_NO_OBJECT_ATTRIBUTES,
@@ -1683,6 +1840,12 @@ Status
     determine_initial_status(pDevice);
 
     pDevice->volt_qual = true;
+    unsigned int shit = 0;
+
+    TraceEvents(
+        TRACE_LEVEL_ERROR,
+        TRACE_DEVICE,
+        "charge reg = %d", bq2597x_read_reg(pDevice, BQ2597X_REG_0C, &shit));
 
     if (pDevice->volt_qual) {
         TraceEvents(
@@ -1692,11 +1855,16 @@ Status
         bq2597x_enable_charge(pDevice, true);
     }
 
-    if (NT_SUCCESS(status))
-    {
-        TraceEvents(TRACE_LEVEL_ERROR, TRACE_DEVICE, "Exiting OnD0Entry - %!STATUS!",
-            status);
-    }
+    TraceEvents(
+        TRACE_LEVEL_ERROR,
+        TRACE_DEVICE,
+        "charge reg = %d", bq2597x_read_reg(pDevice, BQ2597X_REG_0C, &shit));
+
+    TraceEvents(
+        TRACE_LEVEL_ERROR,
+        TRACE_DEVICE,
+        "Exiting %!FUNC! - %!STATUS!",
+        status);
 
 exit:
     return status;
@@ -1726,19 +1894,26 @@ Status
 {
     UNREFERENCED_PARAMETER(FxPreviousState);
 
+    TraceEvents(
+        TRACE_LEVEL_ERROR,
+        TRACE_DEVICE,
+        "Entering %!FUNC!");
+
     PBQ2597X_CONTEXT pDevice = GetDeviceContext(FxDevice);
     NTSTATUS status = STATUS_SUCCESS;
 
-    //stop charger
-    bq2597x_enable_charge(pDevice, false);
-
-    bq2597x_enable_adc(pDevice, false);
+    bq2597x_charger_shutdown(pDevice);
 
     if (pDevice->DataLock != NULL)
 	{
 		WdfObjectDelete(pDevice->DataLock);
 	}
 
+    TraceEvents(
+        TRACE_LEVEL_ERROR,
+        TRACE_DEVICE,
+        "Exiting %!FUNC! - %!STATUS!",
+        status);
     return status;
 }
 
@@ -1763,7 +1938,7 @@ Bq2597xEvtDeviceAdd(
     TraceEvents(
         TRACE_LEVEL_ERROR,
         TRACE_DEVICE,
-        "Entering EvtDeviceAdd \n");
+        "Entering %!FUNC!");
 
     {
         WDF_PNPPOWER_EVENT_CALLBACKS pnpCallbacks;
@@ -1876,9 +2051,8 @@ Bq2597xEvtDeviceAdd(
     TraceEvents(
         TRACE_LEVEL_ERROR,
         TRACE_DEVICE,
-        "Exiting EvtDeviceAdd - %!STATUS!",
+        "Exiting %!FUNC! - %!STATUS!",
         status);
-
     return status;
 }
 
