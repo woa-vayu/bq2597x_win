@@ -356,16 +356,23 @@ NTSTATUS bq2597x_set_wdt(PBQ2597X_CONTEXT pDevice, int ms)
 {
     UINT8 val;
 
-    if (ms == 500)
+    switch (ms) {
+    case 500:
         val = BQ2597X_WATCHDOG_0P5S;
-    else if (ms == 1000)
+        break;
+    case 1000:
         val = BQ2597X_WATCHDOG_1S;
-    else if (ms == 5000)
+        break;
+    case 5000:
         val = BQ2597X_WATCHDOG_5S;
-    else if (ms == 30000)
+        break;
+    case 30000:
         val = BQ2597X_WATCHDOG_30S;
-    else
+        break;
+    default:
         val = BQ2597X_WATCHDOG_30S;
+        break;
+    }
 
     val <<= BQ2597X_WATCHDOG_SHIFT;
 
@@ -996,15 +1003,20 @@ NTSTATUS bq2597x_set_vbat_reg_th(PBQ2597X_CONTEXT pDevice, int th_mv)
 {
     UINT8 val;
 
-    if (th_mv == 50)
+    switch (th_mv) {
+    case 50:
         val = BQ2597X_VBAT_REG_50MV;
-    else if (th_mv == 100)
+        break;
+    case 100:
         val = BQ2597X_VBAT_REG_100MV;
-    else if (th_mv == 150)
+        break;
+    case 150:
         val = BQ2597X_VBAT_REG_150MV;
-    else
+        break;
+    default:
         val = BQ2597X_VBAT_REG_200MV;
-
+        break;
+    }
     val <<= BQ2597X_VBAT_REG_SHIFT;
 
     return bq2597x_update_reg(pDevice, BQ2597X_REG_2C, BQ2597X_VBAT_REG_MASK, val);
@@ -1064,7 +1076,6 @@ NTSTATUS bq2597x_detect_device(PBQ2597X_CONTEXT pDevice)
     return ret;
 }
 
-static void bq2597x_dump_reg(PBQ2597X_CONTEXT pDevice);
 #define RUNNING_PERIOD_S	(60 * 1000)
 
 /*static void bq2597x_monitor_work(struct work_struct* work)
@@ -1110,23 +1121,25 @@ NTSTATUS bq2597x_init_protection(PBQ2597X_CONTEXT pDevice)
 
 NTSTATUS bq2597x_set_bus_protection(PBQ2597X_CONTEXT pDevice, int hvdcp3_type)
 {
-    if (hvdcp3_type == HVDCP3_CLASSA_18W) {
+    switch (hvdcp3_type) {
+    case HVDCP3_CLASSA_18W:
         bq2597x_set_busovp_th(pDevice, BUS_OVP_FOR_QC);
         bq2597x_set_busovp_alarm_th(pDevice, BUS_OVP_ALARM_FOR_QC);
         bq2597x_set_busocp_th(pDevice, BUS_OCP_FOR_QC_CLASS_A);
         bq2597x_set_busocp_alarm_th(pDevice, BUS_OCP_ALARM_FOR_QC_CLASS_A);
-    }
-    else if (hvdcp3_type == HVDCP3_CLASSB_27W) {
+        break;
+    case HVDCP3_CLASSB_27W:
         bq2597x_set_busovp_th(pDevice, BUS_OVP_FOR_QC);
         bq2597x_set_busovp_alarm_th(pDevice, BUS_OVP_ALARM_FOR_QC);
         bq2597x_set_busocp_th(pDevice, BUS_OCP_FOR_QC_CLASS_B);
         bq2597x_set_busocp_alarm_th(pDevice, BUS_OCP_ALARM_FOR_QC_CLASS_B);
-    }
-    else {
+        break;
+    default:
         bq2597x_set_busovp_th(pDevice, bus_ovp_th);
         bq2597x_set_busovp_alarm_th(pDevice, bus_ovp_alarm_th);
         bq2597x_set_busocp_th(pDevice, bus_ocp_th);
         bq2597x_set_busocp_alarm_th(pDevice, bus_ocp_alarm_th);
+        break;
     }
     return 0;
 }
