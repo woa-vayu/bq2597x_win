@@ -1121,26 +1121,33 @@ NTSTATUS bq2597x_init_protection(PBQ2597X_CONTEXT pDevice)
 
 NTSTATUS bq2597x_set_bus_protection(PBQ2597X_CONTEXT pDevice, int hvdcp3_type)
 {
+
+    int data = BUS_OVP_FOR_QC;
+    int data2 = BUS_OVP_ALARM_FOR_QC;
+    int data3 = 0;
+    int data4 = 0;
     switch (hvdcp3_type) {
     case HVDCP3_CLASSA_18W:
-        bq2597x_set_busovp_th(pDevice, BUS_OVP_FOR_QC);
-        bq2597x_set_busovp_alarm_th(pDevice, BUS_OVP_ALARM_FOR_QC);
-        bq2597x_set_busocp_th(pDevice, BUS_OCP_FOR_QC_CLASS_A);
-        bq2597x_set_busocp_alarm_th(pDevice, BUS_OCP_ALARM_FOR_QC_CLASS_A);
+        data3 = BUS_OCP_FOR_QC_CLASS_A;
+        data4 = BUS_OCP_ALARM_FOR_QC_CLASS_A;
         break;
     case HVDCP3_CLASSB_27W:
-        bq2597x_set_busovp_th(pDevice, BUS_OVP_FOR_QC);
-        bq2597x_set_busovp_alarm_th(pDevice, BUS_OVP_ALARM_FOR_QC);
-        bq2597x_set_busocp_th(pDevice, BUS_OCP_FOR_QC_CLASS_B);
-        bq2597x_set_busocp_alarm_th(pDevice, BUS_OCP_ALARM_FOR_QC_CLASS_B);
+        data3 = BUS_OCP_FOR_QC_CLASS_B;
+        data4 = BUS_OCP_ALARM_FOR_QC_CLASS_B;
         break;
     default:
-        bq2597x_set_busovp_th(pDevice, bus_ovp_th);
-        bq2597x_set_busovp_alarm_th(pDevice, bus_ovp_alarm_th);
-        bq2597x_set_busocp_th(pDevice, bus_ocp_th);
-        bq2597x_set_busocp_alarm_th(pDevice, bus_ocp_alarm_th);
+        data = bus_ovp_th;
+        data2 = bus_ovp_alarm_th;
+        data3 = bus_ocp_th;
+        data4 = bus_ocp_alarm_th;
         break;
     }
+
+    bq2597x_set_busovp_th(pDevice, data);
+    bq2597x_set_busovp_alarm_th(pDevice, data2);
+    bq2597x_set_busocp_th(pDevice, data3);
+    bq2597x_set_busocp_alarm_th(pDevice, data4);
+
     return 0;
 }
 
