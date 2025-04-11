@@ -1,7 +1,7 @@
-#include "bq2597x.h"
-#include "registers.h"
-#include "bq2597x.tmh"
+#include <bq2597x.h>
+#include <registers.h>
 
+#include <bq2597x.tmh>
 
 /* feature configuration */
 unsigned int bat_ovp_th = 4550;        /* battery ovp threshold (mV) */
@@ -192,8 +192,8 @@ static int bq_debug_flag;
 
 NTSTATUS
 DriverEntry(
-    __in PDRIVER_OBJECT  DriverObject,
-    __in PUNICODE_STRING RegistryPath
+    IN PDRIVER_OBJECT  DriverObject,
+    IN PUNICODE_STRING RegistryPath
 )
 {
     NTSTATUS               status = STATUS_SUCCESS;
@@ -240,7 +240,7 @@ NTSTATUS bq2597x_write_reg(PBQ2597X_CONTEXT pDevice, int reg, UINT8 data)
 }
 
 NTSTATUS bq2597x_read_reg(
-    _In_ PBQ2597X_CONTEXT pDevice,
+    IN PBQ2597X_CONTEXT pDevice,
     UINT8 reg,
     UINT8* data
 ) {
@@ -254,7 +254,7 @@ NTSTATUS bq2597x_read_reg(
 }
 
 NTSTATUS bq2597x_read_reg_word(
-    _In_ PBQ2597X_CONTEXT pDevice,
+    IN PBQ2597X_CONTEXT pDevice,
     UINT8 reg,
     UINT16* data
 ) {
@@ -1643,9 +1643,9 @@ OnInterruptIsr(
 
 NTSTATUS
 OnPrepareHardware(
-    _In_  WDFDEVICE     FxDevice,
-    _In_  WDFCMRESLIST  FxResourcesRaw,
-    _In_  WDFCMRESLIST  FxResourcesTranslated
+    IN  WDFDEVICE     FxDevice,
+    IN  WDFCMRESLIST  FxResourcesRaw,
+    IN  WDFCMRESLIST  FxResourcesTranslated
 )
 /*++
 
@@ -1745,8 +1745,8 @@ Status
 
 NTSTATUS
 OnReleaseHardware(
-    _In_  WDFDEVICE     FxDevice,
-    _In_  WDFCMRESLIST  FxResourcesTranslated
+    IN  WDFDEVICE     FxDevice,
+    IN  WDFCMRESLIST  FxResourcesTranslated
 )
 /*++
 
@@ -1794,8 +1794,8 @@ static void determine_initial_status(PBQ2597X_CONTEXT pDevice)
 
 NTSTATUS
 OnD0Entry(
-    _In_  WDFDEVICE               FxDevice,
-    _In_  WDF_POWER_DEVICE_STATE  FxPreviousState
+    IN  WDFDEVICE               FxDevice,
+    IN  WDF_POWER_DEVICE_STATE  FxPreviousState
 )
 /*++
 
@@ -1892,8 +1892,8 @@ exit:
 
 NTSTATUS
 OnD0Exit(
-    _In_  WDFDEVICE               FxDevice,
-    _In_  WDF_POWER_DEVICE_STATE  FxPreviousState
+    IN  WDFDEVICE               FxDevice,
+    IN  WDF_POWER_DEVICE_STATE  FxPreviousState
 )
 /*++
 

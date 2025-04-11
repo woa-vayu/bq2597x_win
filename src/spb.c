@@ -18,18 +18,17 @@ Revision History:
 
 --*/
 
-#include "bq2597x.h"
-#include "spb.h"
+#include <bq2597x.h>
 #include <reshub.h>
 #include <spb.h>
-
-#include "spb.tmh"
+#include <spb1.h>
+#include <spb.tmh>
 
 NTSTATUS
 SpbDoWriteDataSynchronously(
-	IN SPB_CONTEXT* SpbContext,
-	IN PVOID Data,
-	IN ULONG Length
+	_In_ SPB_CONTEXT* SpbContext,
+	_In_ PVOID Data,
+	_In_ ULONG Length
 )
 /*++
 
@@ -127,9 +126,9 @@ exit:
 
 NTSTATUS
 SpbWriteDataSynchronously(
-	IN SPB_CONTEXT* SpbContext,
-	IN PVOID Data,
-	IN ULONG Length
+	_In_ SPB_CONTEXT* SpbContext,
+	_In_ PVOID Data,
+	_In_ ULONG Length
 )
 /*++
 
@@ -168,11 +167,11 @@ NTSTATUS Status indicating success or failure
 
 NTSTATUS
 SpbDoWriteDataSynchronouslyEx(
-	IN SPB_CONTEXT* SpbContext,
-	IN PVOID Data,
-	IN ULONG Length,
-	IN PVOID Data2,
-	IN ULONG Length2
+	_In_ SPB_CONTEXT* SpbContext,
+	_In_ PVOID Data,
+	_In_ ULONG Length,
+	_In_ PVOID Data2,
+	_In_ ULONG Length2
 )
 /*++
 
@@ -271,11 +270,11 @@ exit:
 
 NTSTATUS
 SpbWriteDataSynchronouslyEx(
-	IN SPB_CONTEXT* SpbContext,
-	IN PVOID Data,
-	IN ULONG Length,
-	IN PVOID Data2,
-	IN ULONG Length2
+	_In_ SPB_CONTEXT* SpbContext,
+	_In_ PVOID Data,
+	_In_ ULONG Length,
+	_In_ PVOID Data2,
+	_In_ ULONG Length2
 )
 /*++
 

@@ -1,4 +1,4 @@
-#include "trace.h"
+#include <trace.h>
 
 #pragma warning(disable:4200)  // suppress nameless struct/union warning
 #pragma warning(disable:4201)  // suppress nameless struct/union warning
@@ -13,8 +13,8 @@
 
 #include <acpiioct.h>
 #include <ntstrsafe.h>
-
-#include "spb.h"
+#include <spb.h>
+#include <spb1.h>
 
 //
 // String definitions

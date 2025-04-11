@@ -1,7 +1,9 @@
-	//
-	// Tracing Definitions:
-	//
-	// Control GUID: 
+// Copyright (c) Microsoft Corporation. All Rights Reserved. 
+
+#pragma once
+
+//
+// Control GUID: 
 	// {73e3b785-f5fb-423e-94a9-56627fea9053}
 	//
 
