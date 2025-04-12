@@ -1,4 +1,4 @@
 # bq2597x Charger Driver for Windows
 This driver only works with bq2597x charger found in POCO X3 Pro.
 
-## Curent state: Unknown
+## Curent state: Deprecated and replaced by another driver
